@@ -1,0 +1,5 @@
+websockets>=13.0
+aiohttp>=3.9.0
+pandas>=2.0.0
+numpy>=1.26.0
+gzip36>=1.0.0  # stdlib in Python 3.12+

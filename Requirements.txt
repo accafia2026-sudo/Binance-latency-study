@@ -1,0 +1,83 @@
+# Binance Latency Study — Reproducibility Package
+
+Code and pipeline for:
+
+> [Author], 2026. *Exchange-Side Trade-Feed Latency and Inventory Blindness
+> in Crypto Market Making: Evidence from Co-Located Measurement.*
+
+## Overview
+
+The study measures end-to-end WebSocket latency across three concurrent
+Binance BTCUSDT streams from a co-located AWS Tokyo instance. Two probes
+are used:
+
+1. `probe_rest.py` — round-trip latency on the REST API (control path)
+2. `probe_ws.py`   — three concurrent WebSocket streams (spot trades,
+                     futures trades, futures BBO)
+
+All data is written to gzipped CSV with millisecond resolution.
+
+## Environment
+
+- AWS EC2 `t8i.small` (2 vCPU, 4 GiB RAM) in `ap-northeast-1` (Tokyo)
+- Ubuntu 22.04 LTS
+- Python 3.11+ (venv)
+- NTP-synchronized system clock (`systemd-timesyncd`, verified UTC)
+
+## Installation
+
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+
+## Recording
+
+Run each probe in a separate `tmux` session:
+
+    tmux new -s probe   # then: python scripts/probe_rest.py
+    tmux new -s ws      # then: python scripts/probe_ws.py
+
+Expected output files in `data/`:
+
+| File | Content | Approx. rate |
+|:---|:---|---:|
+| `rest_latency.csv` | REST round-trip | 2 / s |
+| `btc_spot_trades.csv.gz` | Spot BTCUSDT trades | 30 / s |
+| `btc_fut_trades.csv.gz` | Perp BTCUSDT trades | 30 / s |
+| `btc_fut_bbo.csv.gz` | Perp BTCUSDT top-of-book | 350 / s |
+
+Storage estimate (compressed): ~700 MB / 24 hours.
+
+## Analysis
+
+    python scripts/analyze.py /path/to/data_dir
+
+Produces:
+- Per-stream latency distribution (Table 1 of the paper)
+- Hourly drift table (Fig. 2 of the paper)
+- Burst event list + ε_t table (Table 2 of the paper)
+- `epsilon_table.csv` for downstream plotting
+
+## Notes on the format
+
+The recorder writes gzipped CSV with `f.flush()` every 25 messages to
+guarantee durability. Files being actively written do not have a valid
+gzip end-of-stream marker, so downstream readers must tolerate
+truncation. The `read_truncated_gz()` helper in `analyze.py` handles
+this case and silently drops the last partial line.
+
+## Replication parameters
+
+| Parameter | Value |
+|:---|:---|
+| Capture window | 27 hours (2 US sessions) |
+| Server region | `ap-northeast-1` (Tokyo) |
+| Instance type | `t8i.small` |
+| Exchange | Binance |
+| Symbol | BTCUSDT |
+| Streams | spot trades, futures trades, futures BBO, REST |
+| Latency measure | `recv_ms - exchange_event_time_ms` |
+
+## License
+
+MIT License — see LICENSE file.
